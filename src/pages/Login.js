@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabase';
 import { C } from '../components/UI';
 
 export default function Login() {
-  const { signIn, profile } = useAuth();
   const navigate = useNavigate();
 
   const [email,    setEmail]    = useState('');
@@ -16,17 +15,43 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
     try {
-      await signIn(email.trim(), password);
-      // Redirect after profile loads
-      setTimeout(() => {
-        const role = profile?.role;
-        if (role === 'admin')    navigate('/admin');
-        else if (role === 'investor') navigate('/investor');
-        else navigate('/driver');
-      }, 400);
+      // Step 1: sign in with email + password
+      const { data: authData, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+
+      if (authError) throw authError;
+
+      // Step 2: fetch profile to get role
+      const { data: profile, error: profError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profError || !profile) {
+        throw new Error('Account exists but no profile found. Contact admin.');
+      }
+
+      // Step 3: redirect based on role
+      if (profile.role === 'admin')         navigate('/admin',    { replace: true });
+      else if (profile.role === 'investor') navigate('/investor', { replace: true });
+      else                                  navigate('/driver',   { replace: true });
+
     } catch (err) {
-      setError(err.message || 'Invalid credentials');
+      console.error('Login error:', err);
+      // Show a friendly message for common errors
+      if (err.message?.includes('Invalid login credentials')) {
+        setError('Wrong email or password. Please try again.');
+      } else if (err.message?.includes('Email not confirmed')) {
+        setError('Email not confirmed. Ask admin to confirm your account in Supabase.');
+      } else {
+        setError(err.message || 'Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -85,7 +110,7 @@ export default function Login() {
             <div style={{
               background:'#FADBD8', border:'1px solid #E74C3C',
               borderRadius:8, padding:'10px 14px',
-              color: C.red, fontSize:13, marginBottom:16,
+              color: C.red, fontSize:13, marginBottom:16, lineHeight: 1.5,
             }}>
               {error}
             </div>
