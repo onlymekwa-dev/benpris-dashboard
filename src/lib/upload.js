@@ -10,7 +10,6 @@ function parseDate(raw) {
     return `${date.y}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`;
   }
   const s = String(raw).trim();
-  // dd/mm/yy or dd/mm/yyyy
   const parts = s.split('/');
   if (parts.length === 3) {
     const [d, m, y] = parts;
@@ -25,7 +24,10 @@ function num(v) {
   return isNaN(n) ? 0 : n;
 }
 
-// Trim whitespace from all keys in a row object
+function txt(v) {
+  return v != null ? String(v).trim() : '';
+}
+
 function cleanRow(row) {
   const out = {};
   for (const [k, v] of Object.entries(row)) {
@@ -35,8 +37,11 @@ function cleanRow(row) {
   return out;
 }
 
-function txt(v) {
-  return v != null ? String(v).trim() : '';
+function parseSheet(wb, name, headerRow = 1) {
+  const ws = wb.Sheets[name];
+  if (!ws) { console.warn('Sheet not found:', name); return []; }
+  const raw = XLSX.utils.sheet_to_json(ws, { defval: '', range: headerRow - 1 });
+  return raw.map(cleanRow);
 }
 
 // ── Main upload function ────────────────────────────────────────────────────
@@ -46,32 +51,23 @@ export async function uploadWorkbook(file, onProgress) {
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: 'array', cellDates: false });
 
-  // Parse each sheet — clean all row keys to remove trailing spaces
-  function parseSheet(name, headerRow = 1) {
-    const ws = wb.Sheets[name];
-    if (!ws) return [];
-    const raw = XLSX.utils.sheet_to_json(ws, {
-      defval: '',
-      range: headerRow - 1, // 0-indexed
-    });
-    return raw.map(cleanRow);
-  }
-
-  // Investor_Payouts has a merged "Inflow/Outflow" label in row 1
-  // and actual column headers in row 2 — so we start from row 2
   const sheets = {
-    investor : parseSheet('Investor_Summary'),
-    driver   : parseSheet('Driver_Summary'),
-    dPay     : parseSheet('Driver_Payments'),
-    iPay     : parseSheet('Investor_Payouts', 2), // skip the merged header row
+    investor: parseSheet(wb, 'Investor_Summary'),
+    driver  : parseSheet(wb, 'Driver_Summary'),
+    dPay    : parseSheet(wb, 'Driver_Payments'),
+    iPay    : parseSheet(wb, 'Investor_Payouts', 2),
   };
 
-  console.log('Driver sheet sample:', sheets.driver[0]);
-  console.log('Investor sheet sample:', sheets.investor[0]);
-  console.log('Driver payments sample:', sheets.dPay[0]);
-  console.log('Investor payouts sample:', sheets.iPay[0]);
+  console.log('=== SHEET COUNTS ===');
+  console.log('Investors:', sheets.investor.length);
+  console.log('Drivers:', sheets.driver.length);
+  console.log('Driver payments:', sheets.dPay.length);
+  console.log('Investor payouts:', sheets.iPay.length);
+  console.log('=== SAMPLE ROWS ===');
+  console.log('Investor[0]:', JSON.stringify(sheets.investor[0]));
+  console.log('Driver[0]:', JSON.stringify(sheets.driver[0]));
 
-  // ── 1. Archive existing transaction data ──────────────────────────────────
+  // ── 1. Archive and clear transaction tables ───────────────────────────────
   onProgress('Archiving existing records…');
   const uploadId = crypto.randomUUID();
 
@@ -93,96 +89,106 @@ export async function uploadWorkbook(file, onProgress) {
   await archiveAndClear('investor_payouts', 'investor_payouts_archive');
   await archiveAndClear('investor_inflows', 'investor_inflows_archive');
 
-  // ── 2. Upsert Investors ───────────────────────────────────────────────────
+  // ── 2. Clear and re-insert investors ─────────────────────────────────────
   onProgress('Syncing investors…');
+
+  // Delete existing investors so we can re-insert cleanly
+  const { error: delInvErr } = await supabase
+    .from('investors')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delInvErr) console.error('Delete investors error:', delInvErr);
+
   const investorNameToId = {};
 
   for (const rawRow of sheets.investor) {
-    const row = rawRow;
-    const name = txt(row['Full Name']);
-    if (!name) continue;
+    const name = txt(rawRow['Full Name']);
+    if (!name) { console.log('Skipping investor row - no name:', rawRow); continue; }
 
+    // Find matching profile by full_name
     const { data: prof } = await supabase
-      .from('profiles').select('id').eq('full_name', name).single();
+      .from('profiles')
+      .select('id')
+      .eq('full_name', name)
+      .maybeSingle();
 
     const payload = {
       full_name : name,
-      id_number : txt(row['ID'] || row['ID No.'] || ''),
-      contact   : txt(row['Contact'] || ''),
-      email     : txt(row['Email'] || row['email'] || ''),
+      id_number : txt(rawRow['ID'] || rawRow['ID No.'] || ''),
+      contact   : txt(rawRow['Contact'] || ''),
+      email     : txt(rawRow['Email'] || rawRow['email'] || ''),
       profile_id: prof?.id || null,
     };
 
-    const { data: inv } = await supabase
+    console.log('Inserting investor:', name);
+    const { data: inv, error: invErr } = await supabase
       .from('investors')
-      .upsert(payload, { onConflict: 'full_name' })
-      .select('id').single();
+      .insert(payload)
+      .select('id')
+      .single();
 
-    if (inv) {
-      investorNameToId[name] = inv.id;
+    if (invErr) {
+      console.error('Investor insert error for', name, ':', invErr.message, invErr.details);
     } else {
-      const { data: existing } = await supabase
-        .from('investors').select('id').eq('full_name', name).single();
-      if (existing) investorNameToId[name] = existing.id;
+      investorNameToId[name] = inv.id;
+      console.log('Investor inserted:', name, inv.id);
     }
   }
 
-  // ── 3. Upsert Vehicles + Drivers ──────────────────────────────────────────
-  onProgress('Syncing drivers & vehicles…');
+  console.log('Investor name map:', JSON.stringify(investorNameToId));
+
+  // ── 3. Clear and re-insert drivers ───────────────────────────────────────
+  onProgress('Syncing drivers…');
+
+  const { error: delDrvErr } = await supabase
+    .from('drivers')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delDrvErr) console.error('Delete drivers error:', delDrvErr);
+
   const driverNameToId = {};
 
   for (const row of sheets.driver) {
     const name = txt(row['Full Name']);
-    if (!name) continue;
+    if (!name) { console.log('Skipping driver row - no name:', row); continue; }
 
     const investorName = txt(row['Investor'] || row['Investor Assigned'] || '');
     const investorId   = investorNameToId[investorName] || null;
     const vehicleCost  = num(row['Cost of Vehicle'] || row['Cost of Vehicle (GH₵)'] || 0);
-    // Handle trailing spaces in header names
-    const makeModel    = txt(
-      row['Vehicle (Make and Model)'] ||
-      row['Vehicle (Make & Model)']   ||
-      row['Vehicle (Make and Model) ']||
-      ''
-    );
-    const regNo = txt(
-      row['Vehicle Registration']   ||
-      row['Vehicle Registration ']  ||
-      ''
-    );
+    const makeModel    = txt(row['Vehicle (Make and Model)'] || row['Vehicle (Make and Model) '] || row['Vehicle (Make & Model)'] || '');
+    const regNo        = txt(row['Vehicle Registration'] || row['Vehicle Registration '] || '');
+    const weekly       = num(row['Weekly Amount'] || row['Weekly Amount (GH₵)'] || row['Weekly Payout'] || 0);
 
-    // Upsert vehicle
+    // Find or create vehicle
     let vehicleId = null;
     if (vehicleCost > 0) {
-      const vPayload = {
-        make_model  : makeModel || null,
-        registration: regNo || null,
-        cost        : vehicleCost,
-        investor_id : investorId,
-      };
-
+      // First check if vehicle already exists
       if (regNo) {
-        const { data: veh } = await supabase
-          .from('vehicles')
-          .upsert(vPayload, { onConflict: 'registration' })
-          .select('id').single();
-        vehicleId = veh?.id || null;
-
-        if (!vehicleId) {
-          const { data: ev } = await supabase
-            .from('vehicles').select('id').eq('registration', regNo).single();
-          vehicleId = ev?.id || null;
+        const { data: existingVeh } = await supabase
+          .from('vehicles').select('id').eq('registration', regNo).maybeSingle();
+        if (existingVeh) {
+          vehicleId = existingVeh.id;
+        } else {
+          const { data: veh, error: vehErr } = await supabase
+            .from('vehicles')
+            .insert({ make_model: makeModel || null, registration: regNo, cost: vehicleCost, investor_id: investorId })
+            .select('id').single();
+          if (vehErr) console.error('Vehicle insert error:', vehErr.message);
+          else vehicleId = veh.id;
         }
       } else {
-        // No registration — insert without conflict check
-        const { data: veh } = await supabase
-          .from('vehicles').insert(vPayload).select('id').single();
-        vehicleId = veh?.id || null;
+        // No registration — just insert
+        const { data: veh, error: vehErr } = await supabase
+          .from('vehicles')
+          .insert({ make_model: makeModel || null, registration: null, cost: vehicleCost, investor_id: investorId })
+          .select('id').single();
+        if (vehErr) console.error('Vehicle insert error (no reg):', vehErr.message);
+        else vehicleId = veh?.id || null;
       }
     }
 
     const { data: prof } = await supabase
-      .from('profiles').select('id').eq('full_name', name).single();
+      .from('profiles').select('id').eq('full_name', name).maybeSingle();
 
     const dPayload = {
       full_name     : name,
@@ -191,34 +197,33 @@ export async function uploadWorkbook(file, onProgress) {
       driver_license: txt(row['Driver License'] || ''),
       investor_id   : investorId,
       vehicle_id    : vehicleId,
-      weekly_amount : num(row['Weekly Amount'] || row['Weekly Amount (GH₵)'] || 0),
+      weekly_amount : weekly,
       profile_id    : prof?.id || null,
     };
 
-    const { data: drv } = await supabase
+    console.log('Inserting driver:', name, 'investor:', investorName, 'investorId:', investorId);
+    const { data: drv, error: drvErr } = await supabase
       .from('drivers')
-      .upsert(dPayload, { onConflict: 'full_name' })
-      .select('id').single();
+      .insert(dPayload)
+      .select('id')
+      .single();
 
-    if (drv) {
-      driverNameToId[name] = drv.id;
+    if (drvErr) {
+      console.error('Driver insert error for', name, ':', drvErr.message, drvErr.details, drvErr.hint);
     } else {
-      const { data: ed } = await supabase
-        .from('drivers').select('id').eq('full_name', name).single();
-      if (ed) driverNameToId[name] = ed.id;
+      driverNameToId[name] = drv.id;
+      console.log('Driver inserted:', name, drv.id);
     }
   }
 
   // ── 4. Insert Driver Payments ─────────────────────────────────────────────
   onProgress('Uploading driver payments…');
   const dpRows = [];
-
   for (const row of sheets.dPay) {
     const name = txt(row['Name']);
     const amt  = num(row['Amt. Paid'] || row['Amt. Paid '] || 0);
     const date = parseDate(row['Date']);
     if (!name || !amt) continue;
-
     dpRows.push({
       driver_id      : driverNameToId[name] || null,
       driver_name    : name,
@@ -228,7 +233,10 @@ export async function uploadWorkbook(file, onProgress) {
       transaction_id : txt(row['Transaction ID'] || ''),
     });
   }
-  if (dpRows.length) await supabase.from('driver_payments').insert(dpRows);
+  if (dpRows.length) {
+    const { error: dpErr } = await supabase.from('driver_payments').insert(dpRows);
+    if (dpErr) console.error('Driver payments insert error:', dpErr.message);
+  }
 
   // ── 5. Insert Investor Inflows + Payouts ──────────────────────────────────
   onProgress('Uploading investor transactions…');
@@ -236,11 +244,9 @@ export async function uploadWorkbook(file, onProgress) {
   const payoutRows = [];
 
   for (const row of sheets.iPay) {
-    // Inflow side (columns A–E): Name, Date, Amt. Paid, Payment Channel, Transaction ID
     const iName = txt(row['Name'] || '');
     const iAmt  = num(row['Amt. Paid'] || row['Amt. Paid '] || 0);
     const iDate = parseDate(row['Date'] || '');
-
     if (iName && iAmt) {
       inflowRows.push({
         investor_id    : investorNameToId[iName] || null,
@@ -252,46 +258,31 @@ export async function uploadWorkbook(file, onProgress) {
       });
     }
 
-    // Outflow side (columns I–M): Name, Date, Amt. Paid, Payment Channel, Transaction ID
-    // After cleanRow these come through as 'Name_1', 'Date_1' etc if duplicate headers
-    // OR as the same names if XLSX deduplicated them
     const oName = txt(row['Name_1'] || row['Name__1'] || '');
     const oAmt  = num(row['Amt. Paid_1'] || row['Amt. Paid _1'] || row['Amt. Paid__1'] || 0);
     const oDate = parseDate(row['Date_1'] || row['Date__1'] || '');
-
     if (oName && oAmt) {
       payoutRows.push({
         investor_id    : investorNameToId[oName] || null,
         investor_name  : oName,
         payout_date    : oDate || null,
         amount         : oAmt,
-        payment_channel: txt(row['Payment Channel_1'] || ''),
-        transaction_id : txt(row['Transaction ID_1'] || ''),
+        payment_channel: '',
+        transaction_id : '',
       });
     }
   }
 
-  if (inflowRows.length) await supabase.from('investor_inflows').insert(inflowRows);
-  if (payoutRows.length) await supabase.from('investor_payouts').insert(payoutRows);
-
-  // ── 6. Update driver status based on payment percentage ───────────────────
-  onProgress('Updating payment statuses…');
-  const { data: allDrivers } = await supabase
-    .from('v_driver_summary').select('id, pct_paid');
-
-  if (allDrivers) {
-    for (const d of allDrivers) {
-      const pct = parseFloat(d.pct_paid) || 0;
-      const status =
-        pct >= 1    ? 'Completed'   :
-        pct >= 0.5  ? 'On Track'    :
-        pct >= 0.1  ? 'In Progress' : 'At Risk';
-
-      await supabase.from('drivers').update({ status }).eq('id', d.id);
-    }
+  if (inflowRows.length) {
+    const { error: infErr } = await supabase.from('investor_inflows').insert(inflowRows);
+    if (infErr) console.error('Inflows insert error:', infErr.message);
+  }
+  if (payoutRows.length) {
+    const { error: payErr } = await supabase.from('investor_payouts').insert(payoutRows);
+    if (payErr) console.error('Payouts insert error:', payErr.message);
   }
 
-  // ── 7. Log upload ─────────────────────────────────────────────────────────
+  // ── 6. Log upload ─────────────────────────────────────────────────────────
   const { data: { user } } = await supabase.auth.getUser();
   await supabase.from('upload_history').insert({
     id         : uploadId,
@@ -317,7 +308,6 @@ export async function uploadWorkbook(file, onProgress) {
   };
 }
 
-// ── Post-upload: return unlinked records ───────────────────────────────────
 export async function getUnlinkedRecords() {
   const [{ data: drivers }, { data: investors }] = await Promise.all([
     supabase.from('drivers').select('id, full_name, email, contact').is('profile_id', null),
