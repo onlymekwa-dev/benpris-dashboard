@@ -12,7 +12,7 @@ import AdminInvestorPayouts from './pages/AdminInvestorPayouts';
 import AdminUpload         from './pages/AdminUpload';
 import { AdminHistory }    from './pages/AdminHistory';
 import AdminUsers          from './pages/AdminUsers';
-import { InvestorOverview, InvestorVehicles } from './pages/InvestorDashboard';
+import { InvestorOverview, InvestorVehicles, InvestorPayouts } from './pages/InvestorDashboard';
 import { DriverOverview, DriverPayments }     from './pages/DriverDashboard';
 
 function RequireAuth({ role, children }) {
@@ -62,7 +62,7 @@ export default function App() {
           {/* Investor */}
           <Route path="/investor"          element={<RequireAuth role="investor"><InvestorOverview /></RequireAuth>} />
           <Route path="/investor/vehicles" element={<RequireAuth role="investor"><InvestorVehicles /></RequireAuth>} />
-          <Route path="/investor/payouts"  element={<RequireAuth role="investor"><InvestorOverview /></RequireAuth>} />
+          <Route path="/investor/payouts"  element={<RequireAuth role="investor"><InvestorPayouts /></RequireAuth>} />
 
           {/* Driver */}
           <Route path="/driver"          element={<RequireAuth role="driver"><DriverOverview /></RequireAuth>} />
