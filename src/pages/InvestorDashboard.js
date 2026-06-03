@@ -204,7 +204,9 @@ export function InvestorVehicles() {
     async function load() {
       const { data: invRec } = await supabase.from('investors').select('id').eq('profile_id', profile.id).single();
       if (!invRec) { setLoading(false); return; }
+      // Use investor_id directly now that the view exposes it
       const { data } = await supabase.from('v_driver_summary').select('*').eq('investor_id', invRec.id);
+      console.log('Vehicles data:', data, 'for investor:', invRec.id);
       setDrivers((data || []).map(d => ({
         ...d,
         pct: d.vehicle_cost > 0 ? d.total_paid / d.vehicle_cost * 100 : 0,
@@ -258,6 +260,80 @@ export function InvestorVehicles() {
             );
           })}
         </div>
+      )}
+    </AppLayout>
+  );
+}
+
+
+// ── Investor Payouts page ──────────────────────────────────────────────────
+export function InvestorPayouts() {
+  const { profile } = useAuth();
+  const [payouts,  setPayouts]  = useState([]);
+  const [inflows,  setInflows]  = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [tab,      setTab]      = useState('payouts');
+
+  useEffect(() => {
+    async function load() {
+      const { data: invRec } = await supabase.from('investors').select('id,full_name').eq('profile_id', profile.id).single();
+      if (!invRec) { setLoading(false); return; }
+      const [{ data: po }, { data: inf }] = await Promise.all([
+        supabase.from('investor_payouts').select('*').eq('investor_id', invRec.id).order('payout_date', { ascending:false }),
+        supabase.from('investor_inflows').select('*').eq('investor_id', invRec.id).order('investment_date', { ascending:false }),
+      ]);
+      setPayouts(po || []);
+      setInflows(inf || []);
+      setLoading(false);
+    }
+    if (profile) load();
+  }, [profile]);
+
+  const totalPayouts = payouts.reduce((s,r) => s + (r.amount || 0), 0);
+  const totalInflows = inflows.reduce((s,r) => s + (r.amount || 0), 0);
+
+  const payoutCols = [
+    { key:'payout_date',    label:'Date',           render: v => v || '—' },
+    { key:'amount',         label:'Amount (GH₵)',   render: v => fmt(v)   },
+    { key:'payment_channel',label:'Channel'                                },
+    { key:'transaction_id', label:'Transaction ID'                         },
+  ];
+  const inflowCols = [
+    { key:'investment_date',label:'Date',           render: v => v || '—' },
+    { key:'amount',         label:'Invested (GH₵)', render: v => fmt(v)   },
+    { key:'payment_channel',label:'Channel'                                },
+    { key:'transaction_id', label:'Transaction ID'                         },
+  ];
+
+  return (
+    <AppLayout>
+      <PageHeader title="My Transactions" subtitle="Your capital investments and weekly payouts" />
+
+      <div style={{ display:'flex', gap:14, flexWrap:'wrap', marginBottom:24 }}>
+        <StatCard label="Total Invested"  value={`GH₵ ${fmt(totalInflows)}`}  colour={C.navy} />
+        <StatCard label="Total Paid Out"  value={`GH₵ ${fmt(totalPayouts)}`}  colour={C.teal} />
+        <StatCard label="Payout Records"  value={payouts.length}               colour={C.gold} />
+      </div>
+
+      <div style={{ display:'flex', borderBottom:`2px solid ${C.lgray}`, marginBottom:20 }}>
+        {[
+          { id:'payouts', label:`Weekly Payouts (${payouts.length})` },
+          { id:'inflows', label:`Capital Invested (${inflows.length})` },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding:'10px 22px', border:'none', background:'transparent',
+            fontWeight: tab===t.id ? 800 : 400,
+            color: tab===t.id ? C.navy : '#888',
+            borderBottom: tab===t.id ? `3px solid ${C.navy}` : '3px solid transparent',
+            cursor:'pointer', fontSize:14,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {loading ? <Spinner /> : (
+        tab === 'payouts'
+          ? <Table columns={payoutCols} rows={payouts} emptyMsg="No payout records yet" />
+          : <Table columns={inflowCols} rows={inflows} emptyMsg="No investment records yet" />
       )}
     </AppLayout>
   );
