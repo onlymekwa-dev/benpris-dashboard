@@ -75,13 +75,14 @@ export function StatCard({ label, value, colour = C.teal, sub }) {
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 const NAV = {
   admin   : [
-    { to: '/admin',          label: 'Overview'       },
-    { to: '/admin/drivers',  label: 'Drivers'        },
-    { to: '/admin/investors',label: 'Investors'      },
-    { to: '/admin/payments', label: 'Payments'       },
-    { to: '/admin/upload',   label: 'Upload Excel'   },
-    { to: '/admin/history',  label: 'Upload History' },
-    { to: '/admin/users',    label: 'Manage Users'   },
+    { to: '/admin',                  label: 'Overview'            },
+    { to: '/admin/drivers',          label: 'Drivers'             },
+    { to: '/admin/investors',        label: 'Investors'           },
+    { to: '/admin/payments',         label: 'Driver Payments'     },
+    { to: '/admin/investor-payouts', label: 'Investor Payouts'    },
+    { to: '/admin/upload',           label: 'Upload Excel'        },
+    { to: '/admin/history',          label: 'Upload History'      },
+    { to: '/admin/users',            label: 'Manage Users'        },
   ],
   investor: [
     { to: '/investor',         label: 'My Overview'  },
