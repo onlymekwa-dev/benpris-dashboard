@@ -3,12 +3,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { supabase } from '../lib/supabase';
 import { AppLayout, PageHeader, KpiRow, StatCard, ChartCard, FilterBar, C, fmt, Spinner, useIsMobile } from '../components/UI';
 
-const STATUS_FILTERS = ['All','Completed','On Track','In Progress','At Risk'];
+const STATUS_FILTERS = ['All','Completed','On Track','In Progress'];
 const STATUS_STYLE   = {
   'Completed'  : { bg:'#D5F5E3', color: C.green  },
   'On Track'   : { bg:'#D6EAF8', color:'#2980B9' },
   'In Progress': { bg:'#FEF9E7', color: C.amber  },
-  'At Risk'    : { bg:'#FADBD8', color: C.red     },
 };
 const AVATAR_COLORS = [C.navy, C.teal, C.gold,'#8E44AD','#E74C3C','#27AE60','#2980B9','#E67E22','#1ABC9C','#C0392B'];
 
@@ -18,7 +17,7 @@ export default function AdminInvestors() {
   const [rows,    setRows]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState('All');
-  const [chart,   setChart]   = useState('Portfolio Value');
+  const [chart,   setChart]   = useState('Future Value');
   const [search,  setSearch]  = useState('');
   const isMobile = useIsMobile();
 
@@ -28,17 +27,16 @@ export default function AdminInvestors() {
   }, []);
 
   function getStatus(row) {
-    const pct = row.amortized_value > 0 ? row.total_paid_out / row.amortized_value : 0;
-    if (pct >= 1) return 'Completed';
+    const pct = row.future_value > 0 ? row.total_paid_out / row.future_value : 0;
+    if (pct >= 1)   return 'Completed';
     if (pct >= 0.5) return 'On Track';
-    if (pct >= 0.1) return 'In Progress';
-    return 'At Risk';
+    return 'In Progress';
   }
 
   const enriched = rows.map(r => ({
     ...r,
     status: getStatus(r),
-    pct: r.amortized_value > 0 ? (r.total_paid_out / r.amortized_value * 100) : 0,
+    pct: r.future_value > 0 ? (r.total_paid_out / r.future_value * 100) : 0,
   }));
 
   const filtered = enriched
@@ -46,14 +44,14 @@ export default function AdminInvestors() {
     .filter(r => !search || r.full_name.toLowerCase().includes(search.toLowerCase()));
 
   const totalCapital = enriched.reduce((s,r) => s+(r.capital_invested||0), 0);
-  const totalAmort   = enriched.reduce((s,r) => s+(r.amortized_value ||0), 0);
+  const totalFutureValue   = enriched.reduce((s,r) => s+(r.future_value ||0), 0);
   const totalPaidOut = enriched.reduce((s,r) => s+(r.total_paid_out  ||0), 0);
   const totalBalance = enriched.reduce((s,r) => s+(r.balance         ||0), 0);
 
   const chartData = filtered.map(r => ({
     name : r.full_name.split(' ')[0],
-    value: chart === 'Portfolio Value' ? r.amortized_value : r.pct,
-    paid : chart === 'Portfolio Value' ? r.total_paid_out  : null,
+    value: chart === 'Future Value' ? r.future_value : r.pct,
+    paid : chart === 'Future Value' ? r.total_paid_out  : null,
   }));
 
   return (
@@ -62,7 +60,7 @@ export default function AdminInvestors() {
 
       <KpiRow>
         <StatCard label="Total Capital"   value={`GH₵ ${fmt(totalCapital)}`}  colour={C.gold}  />
-        <StatCard label="Portfolio Value" value={`GH₵ ${fmt(totalAmort)}`}    colour={C.green} />
+        <StatCard label="Future Value" value={`GH₵ ${fmt(totalFutureValue)}`}    colour={C.green} />
         <StatCard label="Paid Out"        value={`GH₵ ${fmt(totalPaidOut)}`}  colour={C.teal}  />
         <StatCard label="Outstanding"     value={`GH₵ ${fmt(totalBalance)}`}  colour={C.red}   />
         <StatCard label="Return Rate"     value="20%"                          colour={C.navy}  />
@@ -73,7 +71,7 @@ export default function AdminInvestors() {
 
       {/* Chart toggle + search */}
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:16 }}>
-        {['Portfolio Value','Return %'].map(o => (
+        {['Future Value','Return %'].map(o => (
           <button key={o} onClick={() => setChart(o)} style={{
             padding:'5px 12px', borderRadius:20, border:'none', cursor:'pointer',
             fontSize:12, fontWeight:600, transition:'all .15s',
@@ -134,7 +132,7 @@ export default function AdminInvestors() {
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:12 }}>
                   {[
                     { label:'Invested', value:`GH₵${fmt(row.capital_invested)}`, colour:C.navy  },
-                    { label:'Value',    value:`GH₵${fmt(row.amortized_value)}`,  colour:C.green },
+                    { label:'Value',    value:`GH₵${fmt(row.future_value)}`,  colour:C.green },
                     { label:'Paid Out', value:`GH₵${fmt(row.total_paid_out)}`,   colour:C.teal  },
                   ].map(s => (
                     <div key={s.label} style={{ background:C.lgray, borderRadius:8, padding:'7px 9px' }}>
@@ -168,8 +166,8 @@ export default function AdminInvestors() {
               <XAxis dataKey="name" tick={{ fontSize: isMobile ? 9 : 11 }} angle={isMobile ? -30 : 0} textAnchor={isMobile ? 'end' : 'middle'} />
               <YAxis tick={{ fontSize:10 }} tickFormatter={v => chart==='Return %' ? `${v}%` : `GH₵${(v/1000).toFixed(0)}k`} width={46} />
               <Tooltip formatter={v => chart==='Return %' ? `${Number(v).toFixed(1)}%` : `GH₵ ${fmt(v)}`} />
-              <Bar dataKey="value" name={chart==='Return %' ? 'Return %' : 'Portfolio Value'} fill={C.gold} radius={[4,4,0,0]} />
-              {chart==='Portfolio Value' && <Bar dataKey="paid" name="Paid Out" fill={C.teal} radius={[4,4,0,0]} />}
+              <Bar dataKey="value" name={chart==='Return %' ? 'Return %' : 'Future Value'} fill={C.gold} radius={[4,4,0,0]} />
+              {chart==='Future Value' && <Bar dataKey="paid" name="Paid Out" fill={C.teal} radius={[4,4,0,0]} />}
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
