@@ -25,8 +25,8 @@ export default function AdminInvestorPayouts() {
 
   const totalInflows  = inflows.reduce((s, r) => s + (r.amount || 0), 0);
   const totalPayouts  = payouts.reduce((s, r) => s + (r.amount || 0), 0);
-  const totalAmortized = totalInflows * 1.2;
-  const balance       = totalAmortized - totalPayouts;
+  const totalFutureValue = totalInflows * 1.2;
+  const balance       = totalFutureValue - totalPayouts;
 
   const inflowCols = [
     { key:'investor_name',  label:'Investor'           },
@@ -54,7 +54,7 @@ export default function AdminInvestorPayouts() {
       {/* KPI cards */}
       <div style={{ display:'flex', gap:16, flexWrap:'wrap', marginBottom:24 }}>
         <StatCard label="Total Capital Invested"  value={`GH₵ ${fmt(totalInflows)}`}   colour={C.navy} />
-        <StatCard label="Total Amortized (120%)"  value={`GH₵ ${fmt(totalAmortized)}`} colour={C.gold} />
+        <StatCard label="Total Future Value (120%)"  value={`GH₵ ${fmt(totalFutureValue)}`} colour={C.gold} />
         <StatCard label="Total Paid Out"          value={`GH₵ ${fmt(totalPayouts)}`}   colour={C.teal} />
         <StatCard label="Outstanding Balance"     value={`GH₵ ${fmt(balance)}`}        colour={C.red}  />
       </div>
