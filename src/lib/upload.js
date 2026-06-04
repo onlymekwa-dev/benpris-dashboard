@@ -282,7 +282,22 @@ export async function uploadWorkbook(file, onProgress) {
     if (payErr) console.error('Payouts insert error:', payErr.message);
   }
 
-  // ── 6. Log upload ─────────────────────────────────────────────────────────
+  // ── 6. Update driver status from Excel Status column ────────────────────────
+  // The Excel Status formula detects At Risk (no payment in 3+ weeks) automatically.
+  // We trust that value — upload it directly to the database.
+  onProgress('Updating driver statuses…');
+  const validStatuses = ['Completed', 'On Track', 'In Progress', 'At Risk'];
+  for (const row of sheets.driver) {
+    const name   = txt(row['Full Name']);
+    const status = txt(row['Status'] || '');
+    if (!name || !validStatuses.includes(status)) continue;
+    const drvId  = driverNameToId[name];
+    if (drvId) {
+      await supabase.from('drivers').update({ status }).eq('id', drvId);
+    }
+  }
+
+  // ── 7. Log upload ─────────────────────────────────────────────────────────
   const { data: { user } } = await supabase.auth.getUser();
   await supabase.from('upload_history').insert({
     id         : uploadId,
