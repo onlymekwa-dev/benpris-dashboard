@@ -20,7 +20,7 @@ export default function AdminOverview() {
       const [{ data: cf }, { data: drivers }, { data: investors }] = await Promise.all([
         supabase.from('v_cashflow_summary').select('*').single(),
         supabase.from('v_driver_summary').select('full_name,vehicle_cost,total_paid,balance,pct_paid,status'),
-        supabase.from('v_investor_summary').select('full_name,capital_invested,amortized_value,total_paid_out,balance'),
+        supabase.from('v_investor_summary').select('full_name,capital_invested,future_value,total_paid_out,balance'),
       ]);
       setSummary(cf);
       setDriverData((drivers || []).filter(d => d.vehicle_cost > 0));
@@ -102,7 +102,7 @@ export default function AdminOverview() {
               <Tooltip formatter={v => `GH₵ ${fmt(v)}`} />
               <Legend wrapperStyle={{ fontSize:11 }} />
               <Bar dataKey="capital_invested" name="Capital"    fill={C.navy} radius={[3,3,0,0]} />
-              <Bar dataKey="amortized_value"  name="Amortized"  fill={C.gold} radius={[3,3,0,0]} />
+              <Bar dataKey="future_value"  name="Future Value"  fill={C.gold} radius={[3,3,0,0]} />
               <Bar dataKey="total_paid_out"   name="Paid Out"   fill={C.teal} radius={[3,3,0,0]} />
             </BarChart>
           </ResponsiveContainer>
