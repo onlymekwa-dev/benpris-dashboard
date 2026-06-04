@@ -56,7 +56,7 @@ export function InvestorOverview() {
   if (loading) return <AppLayout><Spinner /></AppLayout>;
   if (!inv)    return <AppLayout><PageHeader title="My Overview" /><p style={{ color:'#999', padding:20 }}>No investor record found. Contact admin.</p></AppLayout>;
 
-  const pct = inv.amortized_value > 0 ? (inv.total_paid_out / inv.amortized_value * 100) : 0;
+  const pct = inv.future_value > 0 ? (inv.total_paid_out / inv.future_value * 100) : 0;
   const pieData = [
     { name:'Paid Out',  value: inv.total_paid_out },
     { name:'Remaining', value: Math.max(inv.balance, 0) },
@@ -75,7 +75,7 @@ export function InvestorOverview() {
 
       <KpiRow>
         <StatCard label="Capital Invested"  value={`GH₵ ${fmt(inv.capital_invested)}`} colour={C.navy} />
-        <StatCard label="Portfolio Value"   value={`GH₵ ${fmt(inv.amortized_value)}`}  colour={C.gold} />
+        <StatCard label="Future Value"   value={`GH₵ ${fmt(inv.future_value)}`}  colour={C.gold} />
         <StatCard label="Total Paid Out"    value={`GH₵ ${fmt(inv.total_paid_out)}`}   colour={C.teal} />
         <StatCard label="Balance"           value={`GH₵ ${fmt(inv.balance)}`}          colour={C.red}  />
         <StatCard label="Vehicles"          value={drivers.length}                      colour={C.teal} />
@@ -92,7 +92,7 @@ export function InvestorOverview() {
         </div>
         <div style={{ display:'flex', justifyContent:'space-between', marginTop:6, fontSize:11, color:'#888' }}>
           <span>GH₵ 0</span>
-          <span>Target: GH₵ {fmt(inv.amortized_value)}</span>
+          <span>Target: GH₵ {fmt(inv.future_value)}</span>
         </div>
       </div>
 
