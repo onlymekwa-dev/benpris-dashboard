@@ -34,8 +34,8 @@ export default function AdminDrivers() {
   }, []);
 
   function getStatus(row) {
-    // Fallback only — Excel formula status takes priority on upload
-    const pct = row.vehicle_cost > 0 ? row.total_paid / row.vehicle_cost : 0;
+    // pct_paid is decimal 0-1
+    const pct = Number(row.pct_paid || 0);
     if (pct >= 1)    return 'Completed';
     if (pct >= 0.5)  return 'On Track';
     if (pct >= 0.1)  return 'In Progress';
@@ -45,7 +45,7 @@ export default function AdminDrivers() {
   const enriched = rows.map(r => ({
     ...r,
     status: r.status || getStatus(r),
-    pct: Number(r.pct_paid || 0),
+    pct: Number(r.pct_paid || 0) * 100,  // convert decimal to %
   }));
 
   const filtered = enriched
