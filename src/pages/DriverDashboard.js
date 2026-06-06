@@ -37,7 +37,7 @@ export function DriverOverview() {
   const cost      = driver.vehicle_cost  || 0;
   const paid      = driver.total_paid    || 0;
   const balance   = driver.balance       || 0;
-  const pct       = cost > 0 ? (paid / cost * 100) : 0;
+  const pct       = Number(driver.pct_paid || 0);
   const weekly    = driver.weekly_amount || 0;
   const weeksLeft = weekly > 0 ? Math.ceil(balance / weekly) : 0;
   const weeksPaid = weekly > 0 ? Math.floor(paid / weekly)   : 0;
