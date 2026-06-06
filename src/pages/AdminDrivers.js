@@ -45,7 +45,7 @@ export default function AdminDrivers() {
   const enriched = rows.map(r => ({
     ...r,
     status: r.status || getStatus(r),
-    pct: r.vehicle_cost > 0 ? (r.total_paid / r.vehicle_cost * 100) : 0,
+    pct: Number(r.pct_paid || 0),
   }));
 
   const filtered = enriched
