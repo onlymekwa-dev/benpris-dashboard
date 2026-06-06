@@ -73,7 +73,7 @@ export function InvestorOverview() {
 
       setPayouts(po || []);
       setDrivers((drvs || []).map(d => ({
-        ...d, pct: Number(d.pct_paid || 0),
+        ...d, pct: Number(d.pct_paid || 0) * 100,
       })));
       setLoading(false);
     }
@@ -93,7 +93,7 @@ export function InvestorOverview() {
     </AppLayout>
   );
 
-  const pct      = Number(inv.pct_paid || 0);
+  const pct      = Number(inv.pct_paid || 0) * 100;  // decimal to %
   const pieData  = [
     { name:'Paid Out',  value: Number(inv.total_paid_out || 0) },
     { name:'Remaining', value: Math.max(Number(inv.balance || 0), 0) },
