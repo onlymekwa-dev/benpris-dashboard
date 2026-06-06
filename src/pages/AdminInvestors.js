@@ -27,7 +27,7 @@ export default function AdminInvestors() {
   }, []);
 
   function getStatus(row) {
-    const pct = row.future_value > 0 ? row.total_paid_out / row.future_value : 0;
+    const pct = Number(row.pct_paid || 0) / 100;
     if (pct >= 1)   return 'Completed';
     if (pct >= 0.5) return 'On Track';
     return 'In Progress';
@@ -36,7 +36,7 @@ export default function AdminInvestors() {
   const enriched = rows.map(r => ({
     ...r,
     status: getStatus(r),
-    pct: r.future_value > 0 ? (r.total_paid_out / r.future_value * 100) : 0,
+    pct: Number(r.pct_paid || 0),
   }));
 
   const filtered = enriched
