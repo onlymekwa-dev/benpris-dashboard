@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { AppLayout, PageHeader, StatCard, KpiRow, ChartCard, FilterBar, Table, C, fmt, Spinner, useIsMobile } from '../components/UI';
+import {
+  AppLayout, PageHeader, StatCard, KpiRow, ChartCard,
+  FilterBar, Table, C, fmt, Spinner, useIsMobile,
+} from '../components/UI';
 
 const STATUS_STYLE = {
   'Completed'  : { bg:'#D5F5E3', color: C.green  },
@@ -11,9 +17,7 @@ const STATUS_STYLE = {
   'At Risk'    : { bg:'#FADBD8', color: C.red     },
 };
 const AVATAR_COLORS = [C.teal, C.navy, C.gold,'#8E44AD','#E74C3C','#27AE60','#2980B9','#E67E22'];
-
 function initials(name) { return name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
-
 function MiniStat({ label, value }) {
   return (
     <div style={{ background:C.lgray, borderRadius:6, padding:'6px 8px' }}>
@@ -23,7 +27,22 @@ function MiniStat({ label, value }) {
   );
 }
 
-// ── Investor Overview ──────────────────────────────────────────────────────
+// ── helper: find investor record for logged-in user ───────────────────────────
+async function findInvestor(profile) {
+  // Try profile_id first
+  let { data } = await supabase
+    .from('v_investor_summary').select('*')
+    .eq('profile_id', profile.id).maybeSingle();
+  if (data) return data;
+
+  // Fallback: match by full_name (handles cases where profile_id wasn't linked)
+  const { data: data2 } = await supabase
+    .from('v_investor_summary').select('*')
+    .ilike('full_name', profile.full_name).maybeSingle();
+  return data2 || null;
+}
+
+// ── Investor Overview ─────────────────────────────────────────────────────────
 export function InvestorOverview() {
   const { profile } = useAuth();
   const [inv,     setInv]     = useState(null);
@@ -34,34 +53,54 @@ export function InvestorOverview() {
   const isMobile = useIsMobile();
 
   useEffect(() => {
+    if (!profile) return;
     async function load() {
-      const { data: invRec } = await supabase.from('investors').select('*').eq('profile_id', profile.id).single();
-      if (!invRec) { setLoading(false); return; }
-      const [{ data: summ }, { data: po }, { data: drvs }] = await Promise.all([
-        supabase.from('v_investor_summary').select('*').eq('id', invRec.id).single(),
-        supabase.from('investor_payouts').select('*').eq('investor_id', invRec.id).order('payout_date', { ascending:false }),
-        supabase.from('v_driver_summary').select('*').eq('investor_id', invRec.id),
+      setLoading(true);
+
+      const invData = await findInvestor(profile);
+      console.log('Investor record:', invData);
+
+      if (!invData) { setLoading(false); return; }
+      setInv(invData);
+
+      const [{ data: po }, { data: drvs }] = await Promise.all([
+        supabase.from('investor_payouts')
+          .select('*').eq('investor_id', invData.id)
+          .order('payout_date', { ascending: false }),
+        supabase.from('v_driver_summary')
+          .select('*').eq('investor_id', invData.id),
       ]);
-      setInv(summ);
+
       setPayouts(po || []);
       setDrivers((drvs || []).map(d => ({
-        ...d,
-        pct: Number(d.pct_paid || 0),
+        ...d, pct: Number(d.pct_paid || 0),
       })));
       setLoading(false);
     }
-    if (profile) load();
+    load();
   }, [profile]);
 
   if (loading) return <AppLayout><Spinner /></AppLayout>;
-  if (!inv)    return <AppLayout><PageHeader title="My Overview" /><p style={{ color:'#999', padding:20 }}>No investor record found. Contact admin.</p></AppLayout>;
 
-  const pct = Number(inv.pct_paid || 0);
-  const pieData = [
-    { name:'Paid Out',  value: inv.total_paid_out },
-    { name:'Remaining', value: Math.max(inv.balance, 0) },
+  if (!inv) return (
+    <AppLayout>
+      <PageHeader title="My Overview" />
+      <div style={{ background:C.white, borderRadius:12, padding:32, textAlign:'center', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
+        <div style={{ fontSize:40, marginBottom:12 }}>💼</div>
+        <div style={{ fontWeight:700, color:C.navy, fontSize:16, marginBottom:8 }}>No investor record found</div>
+        <div style={{ color:'#888', fontSize:13 }}>Contact admin to link your account to your investor record.</div>
+      </div>
+    </AppLayout>
+  );
+
+  const pct      = Number(inv.pct_paid || 0);
+  const pieData  = [
+    { name:'Paid Out',  value: Number(inv.total_paid_out || 0) },
+    { name:'Remaining', value: Math.max(Number(inv.balance || 0), 0) },
   ];
-  const filteredDrivers = dFilter === 'All' ? drivers : drivers.filter(d => d.status === dFilter);
+  const filteredDrivers = dFilter === 'All'
+    ? drivers
+    : drivers.filter(d => d.status === dFilter);
 
   const payoutCols = [
     { key:'payout_date',    label:'Date',          render: v => v || '—' },
@@ -75,10 +114,10 @@ export function InvestorOverview() {
 
       <KpiRow>
         <StatCard label="Capital Invested"  value={`GH₵ ${fmt(inv.capital_invested)}`} colour={C.navy} />
-        <StatCard label="Future Value"   value={`GH₵ ${fmt(inv.future_value)}`}  colour={C.gold} />
+        <StatCard label="Future Value"      value={`GH₵ ${fmt(inv.future_value)}`}     colour={C.gold} />
         <StatCard label="Total Paid Out"    value={`GH₵ ${fmt(inv.total_paid_out)}`}   colour={C.teal} />
         <StatCard label="Balance"           value={`GH₵ ${fmt(inv.balance)}`}          colour={C.red}  />
-        <StatCard label="Vehicles"          value={drivers.length}                      colour={C.teal} />
+        <StatCard label="Vehicles"          value={inv.num_vehicles || drivers.length}  colour={C.teal} />
       </KpiRow>
 
       {/* Progress bar */}
@@ -101,7 +140,8 @@ export function InvestorOverview() {
         <ChartCard title="Payout Breakdown" height={200}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}
+              <Pie data={pieData} dataKey="value" nameKey="name"
+                cx="50%" cy="50%" outerRadius={70}
                 label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`}
                 labelLine={false} fontSize={10}>
                 <Cell fill={C.teal} /><Cell fill="#EEE" />
@@ -112,71 +152,78 @@ export function InvestorOverview() {
         </ChartCard>
 
         <ChartCard title="Recent Payouts" height={200}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={payouts.slice(0,8).reverse()} margin={{ bottom:20, left:0, right:0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-              <XAxis dataKey="payout_date" tick={{ fontSize:9 }} angle={-30} textAnchor="end" />
-              <YAxis tick={{ fontSize:9 }} tickFormatter={v=>`GH₵${(v/1000).toFixed(0)}k`} width={42} />
-              <Tooltip formatter={v=>`GH₵ ${fmt(v)}`} />
-              <Bar dataKey="amount" fill={C.gold} radius={[3,3,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {payouts.length === 0
+            ? <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#aaa', fontSize:13 }}>No payouts recorded yet</div>
+            : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={payouts.slice(0,8).reverse()} margin={{ bottom:20, left:0, right:0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <XAxis dataKey="payout_date" tick={{ fontSize:9 }} angle={-30} textAnchor="end" />
+                  <YAxis tick={{ fontSize:9 }} tickFormatter={v=>`GH₵${(v/1000).toFixed(0)}k`} width={42} />
+                  <Tooltip formatter={v=>`GH₵ ${fmt(v)}`} />
+                  <Bar dataKey="amount" fill={C.gold} radius={[3,3,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )
+          }
         </ChartCard>
       </div>
 
       {/* My Drivers */}
       <div style={{ marginBottom:20 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:12 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
           <h3 style={{ margin:0, fontSize:15, fontWeight:700, color:C.navy }}>My Drivers ({drivers.length})</h3>
         </div>
         <FilterBar
           filters={['All','Completed','On Track','In Progress','At Risk']}
           active={dFilter} onChange={setDFilter} label=""
         />
-        <div style={{
-          display:'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(240px,1fr))',
-          gap:12,
-        }}>
-          {filteredDrivers.map((d, i) => {
-            const ss = STATUS_STYLE[d.status] || {};
-            const weeksLeft = d.weekly_amount > 0 ? Math.ceil((d.balance||0)/d.weekly_amount) : '—';
-            return (
-              <div key={d.id} style={{ background:C.white, borderRadius:12, padding:'16px', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', border:`1px solid ${C.lgray}` }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                  <div style={{ width:36, height:36, borderRadius:9, background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', color:C.white, fontWeight:800, fontSize:12, flexShrink:0 }}>
-                    {initials(d.full_name)}
+        {drivers.length === 0 ? (
+          <div style={{ background:C.white, borderRadius:10, padding:24, textAlign:'center', color:'#aaa', fontSize:13 }}>
+            No drivers linked to your investment yet.
+          </div>
+        ) : (
+          <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(240px,1fr))', gap:12 }}>
+            {filteredDrivers.map((d, i) => {
+              const ss = STATUS_STYLE[d.status] || {};
+              const weeksLeft = d.weekly_amount > 0 ? Math.ceil((Number(d.balance)||0)/d.weekly_amount) : '—';
+              return (
+                <div key={d.id} style={{ background:C.white, borderRadius:12, padding:'16px', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', border:`1px solid ${C.lgray}` }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                    <div style={{ width:36, height:36, borderRadius:9, background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', color:C.white, fontWeight:800, fontSize:12, flexShrink:0 }}>
+                      {initials(d.full_name)}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:700, fontSize:13, color:C.navy, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.full_name}</div>
+                      <div style={{ fontSize:11, color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.vehicle || '—'}</div>
+                    </div>
+                    <span style={{ background:ss.bg, color:ss.color, borderRadius:8, padding:'2px 8px', fontSize:10, fontWeight:700, flexShrink:0 }}>{d.status}</span>
                   </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontWeight:700, fontSize:13, color:C.navy, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.full_name}</div>
-                    <div style={{ fontSize:11, color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.vehicle || '—'}</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:9 }}>
+                    <MiniStat label="Cost"     value={`GH₵ ${fmt(d.vehicle_cost)}`} />
+                    <MiniStat label="Paid"     value={`GH₵ ${fmt(d.total_paid)}`}   />
+                    <MiniStat label="Weekly"   value={`GH₵ ${fmt(d.weekly_amount)}`} />
+                    <MiniStat label="Wks Left" value={weeksLeft !== '—' ? `~${weeksLeft}` : '—'} />
                   </div>
-                  <span style={{ background:ss.bg, color:ss.color, borderRadius:8, padding:'2px 8px', fontSize:10, fontWeight:700, flexShrink:0 }}>{d.status}</span>
+                  <div style={{ background:'#EEE', borderRadius:5, height:6, overflow:'hidden' }}>
+                    <div style={{ width:`${Math.min(d.pct,100)}%`, height:'100%', background:`linear-gradient(90deg,${C.teal},${C.navy})`, borderRadius:5 }} />
+                  </div>
+                  <div style={{ fontSize:11, color:C.teal, fontWeight:700, marginTop:4, textAlign:'right' }}>{d.pct.toFixed(1)}%</div>
                 </div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:9 }}>
-                  <MiniStat label="Cost"      value={`GH₵ ${fmt(d.vehicle_cost)}`} />
-                  <MiniStat label="Paid"      value={`GH₵ ${fmt(d.total_paid)}`}   />
-                  <MiniStat label="Weekly"    value={`GH₵ ${fmt(d.weekly_amount)}`} />
-                  <MiniStat label="Wks Left"  value={weeksLeft !== '—' ? `~${weeksLeft}` : '—'} />
-                </div>
-                <div style={{ background:'#EEE', borderRadius:5, height:6, overflow:'hidden' }}>
-                  <div style={{ width:`${Math.min(d.pct,100)}%`, height:'100%', background:`linear-gradient(90deg,${C.teal},${C.navy})`, borderRadius:5 }} />
-                </div>
-                <div style={{ fontSize:11, color:C.teal, fontWeight:700, marginTop:4, textAlign:'right' }}>{d.pct.toFixed(1)}%</div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Recent payouts table */}
       <h3 style={{ color:C.navy, marginBottom:10, fontSize:14 }}>Recent Payouts</h3>
-      <Table columns={payoutCols} rows={payouts.slice(0,10)} emptyMsg="No payouts yet" />
+      <Table columns={payoutCols} rows={payouts.slice(0,10)} emptyMsg="No payouts recorded yet" />
     </AppLayout>
   );
 }
 
-// ── Investor Vehicles ──────────────────────────────────────────────────────
+// ── Investor Vehicles ─────────────────────────────────────────────────────────
 export function InvestorVehicles() {
   const { profile } = useAuth();
   const [drivers, setDrivers] = useState([]);
@@ -185,17 +232,17 @@ export function InvestorVehicles() {
   const isMobile = useIsMobile();
 
   useEffect(() => {
+    if (!profile) return;
     async function load() {
-      const { data: invRec } = await supabase.from('investors').select('id').eq('profile_id', profile.id).single();
-      if (!invRec) { setLoading(false); return; }
-      const { data } = await supabase.from('v_driver_summary').select('*').eq('investor_id', invRec.id);
-      setDrivers((data || []).map(d => ({
-        ...d,
-        pct: Number(d.pct_paid || 0),
-      })));
+      const invData = await findInvestor(profile);
+      if (!invData) { setLoading(false); return; }
+      const { data } = await supabase
+        .from('v_driver_summary').select('*')
+        .eq('investor_id', invData.id);
+      setDrivers((data || []).map(d => ({ ...d, pct: Number(d.pct_paid || 0) })));
       setLoading(false);
     }
-    if (profile) load();
+    load();
   }, [profile]);
 
   const filtered = filter === 'All' ? drivers : drivers.filter(d => d.status === filter);
@@ -208,50 +255,47 @@ export function InvestorVehicles() {
         active={filter} onChange={setFilter} label="Status"
       />
       {loading ? <Spinner /> : (
-        <div style={{
-          display:'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(260px,1fr))',
-          gap:14,
-        }}>
-          {filtered.map((d, i) => {
-            const ss = STATUS_STYLE[d.status] || {};
-            return (
-              <div key={d.id} style={{ background:C.white, borderRadius:12, padding:'18px', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', border:`1px solid ${C.lgray}` }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                  <div style={{ width:38, height:38, borderRadius:10, background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', color:C.white, fontWeight:800, fontSize:12, flexShrink:0 }}>
-                    {initials(d.full_name)}
+        filtered.length === 0 ? (
+          <div style={{ background:C.white, borderRadius:10, padding:32, textAlign:'center', color:'#aaa' }}>
+            No vehicles found.
+          </div>
+        ) : (
+          <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(260px,1fr))', gap:14 }}>
+            {filtered.map((d, i) => {
+              const ss = STATUS_STYLE[d.status] || {};
+              return (
+                <div key={d.id} style={{ background:C.white, borderRadius:12, padding:'18px', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', border:`1px solid ${C.lgray}` }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                    <div style={{ width:38, height:38, borderRadius:10, background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:'flex', alignItems:'center', justifyContent:'center', color:C.white, fontWeight:800, fontSize:12, flexShrink:0 }}>
+                      {initials(d.full_name)}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:700, fontSize:13, color:C.navy, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.full_name}</div>
+                      <div style={{ fontSize:11, color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.vehicle || '—'} · {d.registration || '—'}</div>
+                    </div>
+                    <span style={{ background:ss.bg, color:ss.color, borderRadius:8, padding:'2px 8px', fontSize:10, fontWeight:700, flexShrink:0 }}>{d.status}</span>
                   </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontWeight:700, fontSize:13, color:C.navy, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.full_name}</div>
-                    <div style={{ fontSize:11, color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.vehicle || '—'} · {d.registration || '—'}</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+                    <MiniStat label="Cost"    value={`GH₵ ${fmt(d.vehicle_cost)}`} />
+                    <MiniStat label="Paid"    value={`GH₵ ${fmt(d.total_paid)}`}   />
+                    <MiniStat label="Balance" value={`GH₵ ${fmt(d.balance)}`}      />
+                    <MiniStat label="Weekly"  value={`GH₵ ${fmt(d.weekly_amount)}`} />
                   </div>
-                  <span style={{ background:ss.bg, color:ss.color, borderRadius:8, padding:'2px 8px', fontSize:10, fontWeight:700, flexShrink:0 }}>{d.status}</span>
+                  <div style={{ background:'#EEE', borderRadius:5, height:6, overflow:'hidden' }}>
+                    <div style={{ width:`${Math.min(d.pct,100)}%`, height:'100%', background:`linear-gradient(90deg,${C.teal},${C.navy})`, borderRadius:5 }} />
+                  </div>
+                  <div style={{ fontSize:11, color:C.teal, fontWeight:700, marginTop:4, textAlign:'right' }}>{d.pct.toFixed(1)}%</div>
                 </div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
-                  <MiniStat label="Cost"    value={`GH₵ ${fmt(d.vehicle_cost)}`} />
-                  <MiniStat label="Paid"    value={`GH₵ ${fmt(d.total_paid)}`}   />
-                  <MiniStat label="Balance" value={`GH₵ ${fmt(d.balance)}`}      />
-                  <MiniStat label="Weekly"  value={`GH₵ ${fmt(d.weekly_amount)}`} />
-                </div>
-                <div style={{ background:'#EEE', borderRadius:5, height:6, overflow:'hidden' }}>
-                  <div style={{ width:`${Math.min(d.pct,100)}%`, height:'100%', background:`linear-gradient(90deg,${C.teal},${C.navy})`, borderRadius:5 }} />
-                </div>
-                <div style={{ fontSize:11, color:C.teal, fontWeight:700, marginTop:4, textAlign:'right' }}>{d.pct.toFixed(1)}%</div>
-              </div>
-            );
-          })}
-          {filtered.length === 0 && (
-            <div style={{ gridColumn:'1/-1', padding:30, textAlign:'center', color:'#999', background:C.white, borderRadius:12 }}>
-              No vehicles found.
-            </div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )
       )}
     </AppLayout>
   );
 }
 
-// ── Investor Payouts ───────────────────────────────────────────────────────
+// ── Investor Payouts ──────────────────────────────────────────────────────────
 export function InvestorPayouts() {
   const { profile } = useAuth();
   const [payouts, setPayouts] = useState([]);
@@ -260,22 +304,28 @@ export function InvestorPayouts() {
   const [tab,     setTab]     = useState('payouts');
 
   useEffect(() => {
+    if (!profile) return;
     async function load() {
-      const { data: invRec } = await supabase.from('investors').select('id').eq('profile_id', profile.id).single();
-      if (!invRec) { setLoading(false); return; }
+      const invData = await findInvestor(profile);
+      if (!invData) { setLoading(false); return; }
+
       const [{ data: po }, { data: inf }] = await Promise.all([
-        supabase.from('investor_payouts').select('*').eq('investor_id', invRec.id).order('payout_date', { ascending:false }),
-        supabase.from('investor_inflows').select('*').eq('investor_id', invRec.id).order('investment_date', { ascending:false }),
+        supabase.from('investor_payouts').select('*')
+          .eq('investor_id', invData.id)
+          .order('payout_date', { ascending: false }),
+        supabase.from('investor_inflows').select('*')
+          .eq('investor_id', invData.id)
+          .order('investment_date', { ascending: false }),
       ]);
       setPayouts(po || []);
       setInflows(inf || []);
       setLoading(false);
     }
-    if (profile) load();
+    load();
   }, [profile]);
 
-  const totalPayouts = payouts.reduce((s,r) => s+(r.amount||0), 0);
-  const totalInflows = inflows.reduce((s,r) => s+(r.amount||0), 0);
+  const totalPayouts = payouts.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const totalInflows = inflows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
   const payoutCols = [
     { key:'payout_date',    label:'Date',           render: v => v || '—' },
@@ -300,7 +350,6 @@ export function InvestorPayouts() {
         <StatCard label="Payout Records"  value={payouts.length}               colour={C.gold} />
       </KpiRow>
 
-      {/* Tabs */}
       <div style={{ display:'flex', borderBottom:`2px solid ${C.lgray}`, marginBottom:20 }}>
         {[
           { id:'payouts', label:`Weekly Payouts (${payouts.length})` },
