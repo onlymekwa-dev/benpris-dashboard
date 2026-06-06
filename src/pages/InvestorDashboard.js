@@ -46,7 +46,7 @@ export function InvestorOverview() {
       setPayouts(po || []);
       setDrivers((drvs || []).map(d => ({
         ...d,
-        pct: d.vehicle_cost > 0 ? d.total_paid / d.vehicle_cost * 100 : 0,
+        pct: Number(d.pct_paid || 0),
       })));
       setLoading(false);
     }
@@ -56,7 +56,7 @@ export function InvestorOverview() {
   if (loading) return <AppLayout><Spinner /></AppLayout>;
   if (!inv)    return <AppLayout><PageHeader title="My Overview" /><p style={{ color:'#999', padding:20 }}>No investor record found. Contact admin.</p></AppLayout>;
 
-  const pct = inv.future_value > 0 ? (inv.total_paid_out / inv.future_value * 100) : 0;
+  const pct = Number(inv.pct_paid || 0);
   const pieData = [
     { name:'Paid Out',  value: inv.total_paid_out },
     { name:'Remaining', value: Math.max(inv.balance, 0) },
@@ -191,7 +191,7 @@ export function InvestorVehicles() {
       const { data } = await supabase.from('v_driver_summary').select('*').eq('investor_id', invRec.id);
       setDrivers((data || []).map(d => ({
         ...d,
-        pct: d.vehicle_cost > 0 ? d.total_paid / d.vehicle_cost * 100 : 0,
+        pct: Number(d.pct_paid || 0),
       })));
       setLoading(false);
     }
