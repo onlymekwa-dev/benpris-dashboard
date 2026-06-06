@@ -27,16 +27,17 @@ export default function AdminInvestors() {
   }, []);
 
   function getStatus(row) {
-    const pct = Number(row.pct_paid || 0) / 100;
-    if (pct >= 1)   return 'Completed';
-    if (pct >= 0.5) return 'On Track';
+    // pct_paid from DB is decimal 0-1 (e.g. 0.5 = 50%)
+    const pct = Number(row.pct_paid || 0);
+    if (pct >= 1)    return 'Completed';
+    if (pct >= 0.5)  return 'On Track';
     return 'In Progress';
   }
 
   const enriched = rows.map(r => ({
     ...r,
     status: getStatus(r),
-    pct: Number(r.pct_paid || 0),
+    pct: Number(r.pct_paid || 0) * 100,  // convert to % for display
   }));
 
   const filtered = enriched
