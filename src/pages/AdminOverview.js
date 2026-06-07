@@ -143,9 +143,13 @@ export default function AdminOverview() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               layout="vertical"
-              data={[...driverChartData].map((d,i)=>({ ...d, pct_paid: Number(driverData[i]?.pct_paid||0) }))
+              data={[...driverData]
+                .map(d => ({
+                  name    : d.full_name?.split(' ')[0] || '?',
+                  pct_paid: Number(d.pct_paid || 0) * 100,
+                }))
                 .sort((a,b) => b.pct_paid - a.pct_paid)}
-              margin={{ right:30, left: isMobile ? 60 : 80 }}
+              margin={{ right:40, left: isMobile ? 60 : 80 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
               <XAxis type="number" domain={[0,100]} tick={{ fontSize:10 }} tickFormatter={v=>`${v}%`} />
