@@ -308,7 +308,30 @@ export async function uploadWorkbook(file, onProgress) {
     else console.log('Payouts inserted:', payoutBatch.length);
   }
 
-  // ── STEP 6: Log upload ────────────────────────────────────────────────────
+  // ── STEP 6: Auto-link profiles to investor/driver records ───────────────────
+  onProgress('Linking accounts…');
+
+  // Link investors
+  for (const [name, id] of Object.entries(investorNameToId)) {
+    const { data: prof } = await supabase
+      .from('profiles').select('id')
+      .ilike('full_name', name).eq('role', 'investor').maybeSingle();
+    if (prof?.id) {
+      await supabase.from('investors').update({ profile_id: prof.id }).eq('id', id);
+    }
+  }
+
+  // Link drivers
+  for (const [name, id] of Object.entries(driverNameToId)) {
+    const { data: prof } = await supabase
+      .from('profiles').select('id')
+      .ilike('full_name', name).eq('role', 'driver').maybeSingle();
+    if (prof?.id) {
+      await supabase.from('drivers').update({ profile_id: prof.id }).eq('id', id);
+    }
+  }
+
+  // ── STEP 7: Log upload ────────────────────────────────────────────────────
   const { data: { user } } = await supabase.auth.getUser();
   await supabase.from('upload_history').insert({
     id: crypto.randomUUID(), uploaded_by: user?.id || null,
