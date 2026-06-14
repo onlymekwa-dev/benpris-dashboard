@@ -141,7 +141,7 @@ export async function uploadWorkbook(file, onProgress) {
 
     const { data: prof } = await supabase
       .from('profiles').select('id')
-      .ilike('full_name', name).maybeSingle();
+      .ilike('full_name', name).eq('role', 'investor').maybeSingle();
 
     const payload = {
       full_name       : name,
@@ -207,7 +207,8 @@ export async function uploadWorkbook(file, onProgress) {
     }
 
     const { data: prof } = await supabase
-      .from('profiles').select('id').ilike('full_name', name).maybeSingle();
+      .from('profiles').select('id')
+      .ilike('full_name', name).eq('role', 'driver').maybeSingle();
 
     const { data: drv, error: dErr } = await supabase
       .from('drivers')
