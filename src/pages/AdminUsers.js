@@ -3,9 +3,13 @@ import { supabase } from '../lib/supabase';
 import { AppLayout, PageHeader, Table, StatCard, C, Spinner } from '../components/UI';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+// SECURITY: use Web Crypto's getRandomValues — cryptographically secure,
+// unlike Math.random() which is predictable and unsuitable for credentials.
 function randomPassword(len = 12) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
-  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  const chars = 'ABCDEFGHJKL8SjFSqSJ6DYAcBJrNGN76hEhcij5vtyJK5G819CvV7Fm!@#$%';
+  const bytes = new Uint32Array(len);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
 }
 
 function roleBadge(role) {
@@ -31,20 +35,17 @@ export default function AdminUsers() {
   const [profiles,   setProfiles]   = useState([]);
   const [unlinked,   setUnlinked]   = useState({ drivers: [], investors: [] });
   const [loading,    setLoading]    = useState(true);
-  const [tab,        setTab]        = useState('existing');   // 'existing' | 'invite' | 'unlinked'
+  const [tab,        setTab]        = useState('existing');
 
-  // invite form state
   const [form,       setForm]       = useState({ full_name:'', email:'', role:'driver', send_email: true });
   const [inviting,   setInviting]   = useState(false);
   const [inviteMsg,  setInviteMsg]  = useState('');
   const [inviteErr,  setInviteErr]  = useState('');
-  const [generated,  setGenerated]  = useState(null);   // { email, password }
+  const [generated,  setGenerated]  = useState(null);
 
-  // bulk provision state
   const [provisioning, setProvisioning] = useState(false);
   const [bulkLog,      setBulkLog]      = useState([]);
 
-  // ── Load data ───────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setLoading(true);
     const [{ data: profs }, { data: drivers }, { data: investors }] = await Promise.all([
@@ -59,15 +60,12 @@ export default function AdminUsers() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Invite a single user ────────────────────────────────────────────────────
   async function handleInvite(e) {
     e.preventDefault();
     setInviting(true); setInviteMsg(''); setInviteErr(''); setGenerated(null);
 
     const password = randomPassword();
     try {
-      // Use Supabase Admin API via edge function (see invite_user edge function)
-      // Fallback: use signUp with auto-confirm disabled so admin shares credentials
       const { data, error } = await supabase.functions.invoke('invite-user', {
         body: {
           full_name : form.full_name.trim(),
@@ -86,14 +84,12 @@ export default function AdminUsers() {
       setForm({ full_name:'', email:'', role:'driver', send_email: true });
       await loadData();
     } catch (err) {
-      // If edge function not deployed yet, fall back to direct insert approach
       setInviteErr(`Edge function not reachable. Deploy the invite-user function, or use Supabase Dashboard → Auth → Users. Error: ${err.message}`);
     } finally {
       setInviting(false);
     }
   }
 
-  // ── Bulk provision all unlinked drivers + investors ─────────────────────────
   async function handleBulkProvision() {
     setProvisioning(true);
     setBulkLog([]);
@@ -124,14 +120,12 @@ export default function AdminUsers() {
     await loadData();
   }
 
-  // ── Deactivate user ──────────────────────────────────────────────────────────
   async function deactivate(profileId) {
     if (!window.confirm('Remove this user\'s login access?')) return;
     await supabase.functions.invoke('deactivate-user', { body: { profile_id: profileId } });
     await loadData();
   }
 
-  // ── Reset password ───────────────────────────────────────────────────────────
   async function resetPassword(email) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + '/reset-password',
@@ -140,7 +134,6 @@ export default function AdminUsers() {
     else alert(`Password reset email sent to ${email}`);
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
   const unlinkedCount = unlinked.drivers.length + unlinked.investors.length;
 
   return (
@@ -150,7 +143,6 @@ export default function AdminUsers() {
         subtitle="Create accounts, invite drivers & investors, manage access"
       />
 
-      {/* Stats */}
       <div style={{ display:'flex', gap:14, flexWrap:'wrap', marginBottom:24 }}>
         <StatCard label="Total Users"     value={profiles.length}    colour={C.navy} />
         <StatCard label="Admins"          value={profiles.filter(p=>p.role==='admin').length}    colour={C.navy} />
@@ -164,7 +156,6 @@ export default function AdminUsers() {
         />
       </div>
 
-      {/* Tabs */}
       <div style={{ display:'flex', gap:0, marginBottom:20, borderBottom:`2px solid ${C.lgray}` }}>
         {[
           { id:'existing', label:'All Users' },
@@ -184,7 +175,6 @@ export default function AdminUsers() {
         ))}
       </div>
 
-      {/* ── Tab: All Users ──────────────────────────────────────────────────── */}
       {tab === 'existing' && (
         loading ? <Spinner /> : (
           <Table
@@ -215,7 +205,6 @@ export default function AdminUsers() {
         )
       )}
 
-      {/* ── Tab: Invite User ────────────────────────────────────────────────── */}
       {tab === 'invite' && (
         <div style={{ maxWidth: 560 }}>
           <div style={{
@@ -275,7 +264,6 @@ export default function AdminUsers() {
               </button>
             </form>
 
-            {/* Generated credentials card */}
             {generated && (
               <div style={{
                 marginTop:24, background:'#F8F9FA', borderRadius:10,
@@ -293,7 +281,6 @@ export default function AdminUsers() {
             )}
           </div>
 
-          {/* Edge function setup note */}
           <div style={{
             marginTop:16, background:'#FEF9E7',
             border:'1px solid #F39C12', borderRadius:10, padding:'14px 18px', fontSize:13,
@@ -307,7 +294,6 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* ── Tab: Unlinked Records ─────────────────────────────────────────── */}
       {tab === 'unlinked' && (
         <div>
           {unlinkedCount === 0 ? (
@@ -331,7 +317,6 @@ export default function AdminUsers() {
                 or invite them one by one on the Invite tab.
               </div>
 
-              {/* Bulk provision button */}
               <button
                 onClick={handleBulkProvision}
                 disabled={provisioning}
@@ -340,7 +325,6 @@ export default function AdminUsers() {
                 {provisioning ? 'Creating accounts…' : `⚡ Bulk Provision All ${unlinkedCount} Accounts`}
               </button>
 
-              {/* Bulk log */}
               {bulkLog.length > 0 && (
                 <div style={{
                   background: C.white, borderRadius:12,
@@ -388,7 +372,6 @@ export default function AdminUsers() {
                 </div>
               )}
 
-              {/* Unlinked tables */}
               {[
                 { label:'Drivers without accounts',   rows: unlinked.drivers,   role:'driver'   },
                 { label:'Investors without accounts', rows: unlinked.investors, role:'investor' },
@@ -414,7 +397,6 @@ export default function AdminUsers() {
   );
 }
 
-// ── Small reusable pieces ─────────────────────────────────────────────────────
 function Field({ label, value, onChange, type='text', required }) {
   return (
     <label style={{ display:'block', marginBottom:16 }}>
