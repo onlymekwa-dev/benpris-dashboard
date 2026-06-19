@@ -17,6 +17,7 @@ export default function AdminUpload() {
   function handleFile(f) {
     if (!f) return;
     if (!f.name.endsWith('.xlsx')) { setError('Only .xlsx files are accepted.'); return; }
+    if (f.size > 10 * 1024 * 1024) { setError('File too large — must be under 10MB.'); return; }
     setFile(f); setError(''); setResult(null); setStatus(''); setUnlinked(null);
   }
 
@@ -27,7 +28,6 @@ export default function AdminUpload() {
       const counts = await uploadWorkbook(file, msg => setStatus(msg));
       setResult(counts);
 
-      // Check for new records that don't have accounts yet
       const ul = await getUnlinkedRecords();
       if (ul.total > 0) setUnlinked(ul);
     } catch (err) {
@@ -71,7 +71,7 @@ export default function AdminUpload() {
         </div>
       </div>
 
-      {/* What this does */}
+      {/* What this does — accurate description of full wipe + replace */}
       <div style={{
         background:'#F0F8FF', border:'1px solid #AED6F1',
         borderRadius:10, padding:'14px 18px', marginBottom:16, fontSize:13,
@@ -79,8 +79,8 @@ export default function AdminUpload() {
       }}>
         <strong style={{ color:'#2980B9' }}>ℹ️ What happens when you upload:</strong>
         <ul style={{ margin:'8px 0 0', paddingLeft:20 }}>
-          <li>Existing payments are <strong>archived</strong> (never lost), then replaced with the new data</li>
-          <li>Driver and investor master records are <strong>updated in-place</strong> — nothing deleted</li>
+          <li>All existing investors, drivers, vehicles, and transaction records are <strong>deleted and replaced</strong> with exactly what's in this file</li>
+          <li>The Excel file is the single source of truth — make sure it's complete and correct before uploading</li>
           <li><strong>New drivers or investors</strong> in the file are added automatically</li>
           <li>You'll be prompted to create login accounts for any new people</li>
         </ul>
@@ -90,8 +90,9 @@ export default function AdminUpload() {
         background:'#FEF9E7', border:'1px solid #F39C12',
         borderRadius:10, padding:'14px 18px', marginBottom:20, fontSize:13,
       }}>
-        <strong style={{ color: C.amber }}>⚠️ Transaction data is wiped and replaced on every upload.</strong>
-        {' '}Archived copies are kept permanently and accessible via SQL.
+        <strong style={{ color: C.amber }}>⚠️ This action cannot be undone.</strong>
+        {' '}There is no automatic backup — if you need to keep a record of the current
+        data before uploading, export it from Supabase first.
       </div>
 
       {error && (
@@ -110,7 +111,6 @@ export default function AdminUpload() {
         </div>
       )}
 
-      {/* Success summary */}
       {result && (
         <div style={{
           background:'#D5F5E3', border:'1px solid #27AE60',
@@ -132,7 +132,6 @@ export default function AdminUpload() {
         </div>
       )}
 
-      {/* ── New people detected → prompt to create accounts ───────────────── */}
       {unlinked && unlinked.total > 0 && (
         <div style={{
           background: C.white, border:`2px solid ${C.gold}`,
@@ -151,7 +150,6 @@ export default function AdminUpload() {
             </div>
           </div>
 
-          {/* List them */}
           {[
             { label:'Drivers',   rows: unlinked.drivers   },
             { label:'Investors', rows: unlinked.investors },
