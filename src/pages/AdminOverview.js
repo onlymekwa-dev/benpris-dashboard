@@ -32,8 +32,6 @@ export default function AdminOverview() {
 
       if (cfErr) console.error('Cashflow summary error:', cfErr.message);
       console.log('Cashflow:', cf);
-      console.log('Drivers sample:', drivers?.[0]);
-      console.log('Investors sample:', investors?.[0]);
 
       setSummary(cf);
       setDriverData((drivers || []).filter(d => Number(d.vehicle_cost) > 0));
