@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import { Spinner } from './components/UI';
 
 import Login               from './pages/Login';
+import ResetPassword       from './pages/ResetPassword';
 import AdminOverview       from './pages/AdminOverview';
 import AdminDrivers        from './pages/AdminDrivers';
 import AdminInvestors      from './pages/AdminInvestors';
@@ -47,6 +48,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/"      element={<RootRedirect />} />
 
           {/* Admin */}
