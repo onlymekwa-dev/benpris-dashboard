@@ -283,6 +283,57 @@ export function FilterBar({ filters, active, onChange, label = 'Filter' }) {
   );
 }
 
+// ── DateFilter ────────────────────────────────────────────────────────────
+export function DateFilter({ from, to, onFrom, onTo, onClear, total, filtered }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      flexWrap: 'wrap', marginBottom: 16,
+      padding: '12px 16px',
+      background: C.white, borderRadius: 10,
+      boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: .5 }}>
+        Date
+      </span>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.dgray }}>
+        From
+        <input
+          type="date" value={from} onChange={e => onFrom(e.target.value)}
+          style={dateInputStyle}
+        />
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.dgray }}>
+        To
+        <input
+          type="date" value={to} onChange={e => onTo(e.target.value)}
+          style={dateInputStyle}
+        />
+      </label>
+      {(from || to) && (
+        <button onClick={onClear} style={{
+          padding: '5px 12px', borderRadius: 8,
+          border: `1px solid ${C.red}22`, background: `${C.red}11`,
+          color: C.red, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        }}>
+          Clear
+        </button>
+      )}
+      {total !== undefined && (
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#888' }}>
+          {(from || to) ? `${filtered} of ${total} records` : `${total} records`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const dateInputStyle = {
+  padding: '5px 10px', borderRadius: 7,
+  border: '1.5px solid #DDD', fontSize: 13,
+  outline: 'none', fontFamily: 'Arial, sans-serif',
+};
+
 // ── Table ─────────────────────────────────────────────────────────────────
 export function Table({ columns, rows, emptyMsg = 'No data' }) {
   const isMobile = useIsMobile();
