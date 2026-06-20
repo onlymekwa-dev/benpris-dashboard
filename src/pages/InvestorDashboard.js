@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import {
   AppLayout, PageHeader, StatCard, KpiRow, ChartCard,
-  FilterBar, Table, C, fmt, Spinner, useIsMobile,
+  FilterBar, DateFilter, Table, C, fmt, Spinner, useIsMobile,
 } from '../components/UI';
 
 const STATUS_STYLE = {
@@ -314,6 +314,10 @@ export function InvestorPayouts() {
   const [inflows, setInflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab,     setTab]     = useState('payouts');
+  const [poFrom,  setPoFrom]  = useState('');
+  const [poTo,    setPoTo]    = useState('');
+  const [ifFrom,  setIfFrom]  = useState('');
+  const [ifTo,    setIfTo]    = useState('');
 
   useEffect(() => {
     if (!profile) return;
@@ -332,8 +336,21 @@ export function InvestorPayouts() {
     load();
   }, [profile]);
 
-  const totalPayouts = payouts.reduce((s,r)=>s+Number(r.amount||0),0);
-  const totalInflows = inflows.reduce((s,r)=>s+Number(r.amount||0),0);
+  const filteredPayouts = payouts.filter(r => {
+    const d = r.payout_date || '';
+    if (poFrom && d < poFrom) return false;
+    if (poTo   && d > poTo)   return false;
+    return true;
+  });
+  const filteredInflows = inflows.filter(r => {
+    const d = r.investment_date || '';
+    if (ifFrom && d < ifFrom) return false;
+    if (ifTo   && d > ifTo)   return false;
+    return true;
+  });
+
+  const totalPayouts = filteredPayouts.reduce((s,r)=>s+Number(r.amount||0),0);
+  const totalInflows = filteredInflows.reduce((s,r)=>s+Number(r.amount||0),0);
 
   const payoutCols = [
     { key:'payout_date',    label:'Date',           render:v=>v||'—' },
@@ -354,10 +371,10 @@ export function InvestorPayouts() {
       <KpiRow>
         <StatCard label="Total Invested" value={`GH₵ ${fmt(totalInflows)}`}  colour={C.navy}/>
         <StatCard label="Total Paid Out" value={`GH₵ ${fmt(totalPayouts)}`} colour={C.teal}/>
-        <StatCard label="Payout Records" value={payouts.length}              colour={C.gold}/>
+        <StatCard label="Payout Records" value={filteredPayouts.length}      colour={C.gold}/>
       </KpiRow>
       <div style={{ display:'flex', borderBottom:`2px solid ${C.lgray}`, marginBottom:20 }}>
-        {[{id:'payouts',label:`Weekly Payouts (${payouts.length})`},{id:'inflows',label:`Capital Invested (${inflows.length})`}].map(t=>(
+        {[{id:'payouts',label:`Weekly Payouts (${filteredPayouts.length})`},{id:'inflows',label:`Capital Invested (${filteredInflows.length})`}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             padding:'10px 18px', border:'none', background:'transparent',
             fontWeight:tab===t.id?800:400, color:tab===t.id?C.navy:'#888',
@@ -366,10 +383,25 @@ export function InvestorPayouts() {
           }}>{t.label}</button>
         ))}
       </div>
+      {tab === 'payouts' ? (
+        <DateFilter
+          from={poFrom} to={poTo}
+          onFrom={setPoFrom} onTo={setPoTo}
+          onClear={() => { setPoFrom(''); setPoTo(''); }}
+          total={payouts.length} filtered={filteredPayouts.length}
+        />
+      ) : (
+        <DateFilter
+          from={ifFrom} to={ifTo}
+          onFrom={setIfFrom} onTo={setIfTo}
+          onClear={() => { setIfFrom(''); setIfTo(''); }}
+          total={inflows.length} filtered={filteredInflows.length}
+        />
+      )}
       {loading?<Spinner/>:(
         tab==='payouts'
-          ?<Table columns={payoutCols} rows={payouts} emptyMsg="No payout records yet"/>
-          :<Table columns={inflowCols} rows={inflows} emptyMsg="No investment records yet"/>
+          ?<Table columns={payoutCols} rows={filteredPayouts} emptyMsg="No payout records yet"/>
+          :<Table columns={inflowCols} rows={filteredInflows} emptyMsg="No investment records yet"/>
       )}
     </AppLayout>
   );
